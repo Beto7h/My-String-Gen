@@ -8,7 +8,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from config import Config
 
-# --- SERVIDOR WEB PARA KOYEB ---
+# --- SERVIDOR WEB PARA KOYEB (Evita el error de puerto 8000) ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -16,13 +16,11 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is running")
 
 def run_web_server():
-    # Escucha en el puerto 8000 que es el que Koyeb busca
     server = HTTPServer(('0.0.0.0', 8000), SimpleHandler)
     server.serve_forever()
 
-# Iniciamos el servidor en un hilo separado para que no bloquee al bot
 threading.Thread(target=run_web_server, daemon=True).start()
-# -------------------------------
+# -------------------------------------------------------------
 
 bot = Client(
     "GeneratorBot",
@@ -45,7 +43,6 @@ async def generate_session(client, callback_query):
     method = callback_query.data
     chat_id = callback_query.message.chat.id
     
-    # Pedir datos al usuario
     try:
         phone_ask = await client.ask(chat_id, "📱 Envía tu número con código de país (Ej: +521234567890):", timeout=300)
     except:
@@ -54,7 +51,6 @@ async def generate_session(client, callback_query):
     phone_number = phone_ask.text
     await callback_query.message.reply("⏳ Conectando con Telegram...")
 
-    # Crear cliente temporal
     if method == "pyro":
         temp_client = Client(":memory:", api_id=Config.API_ID, api_hash=Config.API_HASH)
     else:
@@ -79,18 +75,35 @@ async def generate_session(client, callback_query):
     otp = otp_ask.text.replace(" ", "")
 
     try:
+        # --- Lógica de Inicio de Sesión ---
         if method == "pyro":
-            await temp_client.sign_in(phone_number, code_data.phone_code_hash, otp)
+            try:
+                await temp_client.sign_in(phone_number, code_data.phone_code_hash, otp)
+            except Exception as e:
+                if "SESSION_PASSWORD_NEEDED" in str(e):
+                    pwd_ask = await client.ask(chat_id, "🔐 Tu cuenta tiene **Verificación en Dos Pasos**. \n\nPor favor, envía tu contraseña de seguridad:", timeout=300)
+                    await temp_client.check_password(pwd_ask.text)
+                else:
+                    raise e
             string_session = await temp_client.export_session_string()
-        else:
-            await temp_client.sign_in(phone_number, otp)
+        
+        else: # Método Telethon
+            try:
+                await temp_client.sign_in(phone_number, otp)
+            except Exception as e:
+                if "SessionPasswordNeededError" in str(e) or "SESSION_PASSWORD_NEEDED" in str(e):
+                    pwd_ask = await client.ask(chat_id, "🔐 Tu cuenta tiene **Verificación en Dos Pasos**. \n\nPor favor, envía tu contraseña de seguridad:", timeout=300)
+                    await temp_client.sign_in(password=pwd_ask.text)
+                else:
+                    raise e
             string_session = temp_client.session.save()
 
-        # Enviar sesión a Mensajes Guardados por seguridad
-        await temp_client.send_message("me", f"✅ **Tu sesión de {'Pyrogram' if method == 'pyro' else 'Telethon'}**:\n\n`{string_session}`")
+        # Enviar sesión a Mensajes Guardados
+        await temp_client.send_message("me", f"✅ **Tu sesión de {'Pyrogram' if method == 'pyro' else 'Telethon'}**:\n\n`{string_session}`\n\n⚠️ __No compartas este código con nadie.__")
         await temp_client.disconnect()
         
-        await client.send_message(chat_id, "✅ **Éxito!** La sesión ha sido enviada a tus **Mensajes Guardados** de Telegram.")
+        await client.send_message(chat_id, "✅ **¡Éxito!** La sesión ha sido enviada a tus **Mensajes Guardados** en Telegram.")
+
     except Exception as e:
         await client.send_message(chat_id, f"❌ **Error:** {e}")
 
