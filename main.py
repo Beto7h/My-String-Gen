@@ -1,9 +1,28 @@
 import pyromod
+import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from config import Config
+
+# --- SERVIDOR WEB PARA KOYEB ---
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_web_server():
+    # Escucha en el puerto 8000 que es el que Koyeb busca
+    server = HTTPServer(('0.0.0.0', 8000), SimpleHandler)
+    server.serve_forever()
+
+# Iniciamos el servidor en un hilo separado para que no bloquee al bot
+threading.Thread(target=run_web_server, daemon=True).start()
+# -------------------------------
 
 bot = Client(
     "GeneratorBot",
@@ -27,9 +46,12 @@ async def generate_session(client, callback_query):
     chat_id = callback_query.message.chat.id
     
     # Pedir datos al usuario
-    phone_ask = await client.ask(chat_id, "📱 Envía tu número con código de país (Ej: +521234567890):")
+    try:
+        phone_ask = await client.ask(chat_id, "📱 Envía tu número con código de país (Ej: +521234567890):", timeout=300)
+    except:
+        return
+        
     phone_number = phone_ask.text
-
     await callback_query.message.reply("⏳ Conectando con Telegram...")
 
     # Crear cliente temporal
@@ -49,7 +71,11 @@ async def generate_session(client, callback_query):
         await client.send_message(chat_id, f"❌ **Error:** {e}")
         return
 
-    otp_ask = await client.ask(chat_id, "📩 Envía el código OTP que te llegó (Ej: 1 2 3 4 5):")
+    try:
+        otp_ask = await client.ask(chat_id, "📩 Envía el código OTP que te llegó (Ej: 1 2 3 4 5):", timeout=300)
+    except:
+        return
+        
     otp = otp_ask.text.replace(" ", "")
 
     try:
