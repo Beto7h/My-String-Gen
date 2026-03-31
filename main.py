@@ -8,7 +8,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from config import Config
 
-# --- SERVIDOR WEB PARA KOYEB (Evita el error de puerto 8000) ---
+# --- SERVIDOR WEB PARA KOYEB ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -20,8 +20,8 @@ def run_web_server():
     server.serve_forever()
 
 threading.Thread(target=run_web_server, daemon=True).start()
-# -------------------------------------------------------------
 
+# --- CLIENTE PRINCIPAL DEL BOT ---
 bot = Client(
     "GeneratorBot",
     api_id=Config.API_ID,
@@ -33,7 +33,7 @@ bot = Client(
 async def start(client, message):
     text = "👋 **Hola! Soy un Generador de String Session Seguro.**\n\nElige qué tipo de sesión quieres generar:"
     buttons = [
-        [InlineKeyboardButton("Pyrogram V2", callback_data="pyro")],
+        [InlineKeyboardButton("Pyrogram V2 (Recomendado)", callback_data="pyro")],
         [InlineKeyboardButton("Telethon", callback_data="tele")]
     ]
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
@@ -51,8 +51,17 @@ async def generate_session(client, callback_query):
     phone_number = phone_ask.text
     await callback_query.message.reply("⏳ Conectando con Telegram...")
 
+    # --- CAMBIO IMPORTANTE AQUÍ ---
     if method == "pyro":
-        temp_client = Client(":memory:", api_id=Config.API_ID, api_hash=Config.API_HASH)
+        # Usamos in_memory=True y un device_model moderno para evitar baneos y errores de constructor
+        temp_client = Client(
+            "temp_session",
+            api_id=Config.API_ID,
+            api_hash=Config.API_HASH,
+            in_memory=True,
+            device_model="PC 64bit",
+            system_version="Windows 11"
+        )
     else:
         temp_client = TelegramClient(StringSession(), Config.API_ID, Config.API_HASH)
 
@@ -75,7 +84,6 @@ async def generate_session(client, callback_query):
     otp = otp_ask.text.replace(" ", "")
 
     try:
-        # --- Lógica de Inicio de Sesión ---
         if method == "pyro":
             try:
                 await temp_client.sign_in(phone_number, code_data.phone_code_hash, otp)
@@ -87,7 +95,7 @@ async def generate_session(client, callback_query):
                     raise e
             string_session = await temp_client.export_session_string()
         
-        else: # Método Telethon
+        else:
             try:
                 await temp_client.sign_in(phone_number, otp)
             except Exception as e:
